@@ -42,16 +42,3 @@ Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: 
 
 [UninstallRun]
 Filename: "reg"; Parameters: "delete HKCU\Software\Microsoft\Windows\CurrentVersion\Run /v Windows-MCP /f"; Flags: runhidden
-
-[Code]
-procedure CurStepChanged(CurStep: TSetupStep);
-begin
-  if CurStep = ssPostInstall then
-  begin
-    if not WizardIsTaskSelected('startup') then
-    begin
-      RegDeleteStringIncludingSubkeys(HKEY_CURRENT_USER,
-        'Software\Microsoft\Windows\CurrentVersion\Run', 'Windows-MCP');
-    end;
-  end;
-end;
