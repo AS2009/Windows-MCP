@@ -22,9 +22,6 @@ SolidCompression=yes
 WizardStyle=modern
 PrivilegesRequired=lowest
 
-[Languages]
-Name: "chinesesimp"; MessagesFile: "compiler:Languages\ChineseSimplified.isl"
-
 [Tasks]
 Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "附加快捷方式:"
 Name: "startup"; Description: "开机自动启动服务"; GroupDescription: "启动选项:"
@@ -33,12 +30,12 @@ Name: "startup"; Description: "开机自动启动服务"; GroupDescription: "启
 Source: "dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Comment: "配置并启动 Windows-MCP 服务"
-Name: "{group}\卸载 Windows-MCP"; Filename: "{uninstallexe}"
+Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Comment: "Configure and start Windows-MCP service"
+Name: "{group}\Uninstall Windows-MCP"; Filename: "{uninstallexe}"
 Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
 
 [Run]
-Filename: "{app}\{#MyAppExeName}"; Description: "运行配置向导"; Flags: nowait postinstall skipifsilent
+Filename: "{app}\{#MyAppExeName}"; Description: "Launch configuration wizard"; Flags: nowait postinstall skipifsilent
 
 [Registry]
 Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "Windows-MCP"; ValueData: """{app}\{#MyAppExeName}"" serve"; Flags: uninsdeletevalue; Tasks: startup
