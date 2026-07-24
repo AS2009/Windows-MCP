@@ -81,6 +81,40 @@ def start_server(local_port=None):
             creationflags=flag
         )
 
+def _read_config_safe():
+    '''安全读取配置文件，返回 dict。用于 build_exe.py 读取 local 端口配置。'''
+    if not CONFIG_FILE.exists():
+        return {}
+    result = {}
+    current_section = None
+    try:
+        for line in CONFIG_FILE.read_text(encoding='utf-8').split('\n'):
+            line = line.strip()
+            if not line or line.startswith('#'):
+                continue
+            if line.startswith('[') and line.endswith(']'):
+                current_section = line[1:-1]
+                result[current_section] = {}
+                continue
+            if '=' in line and current_section:
+                key, _, val = line.partition('=')
+                key = key.strip()
+                val = val.strip().strip('"')
+                if val.lower() == 'true':
+                    val = True
+                elif val.lower() == 'false':
+                    val = False
+                else:
+                    try:
+                        val = int(val)
+                    except ValueError:
+                        pass
+                result[current_section][key] = val
+    except Exception:
+        pass
+    return result
+
+
 def quick_setup():
     cfg = default_config()
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
