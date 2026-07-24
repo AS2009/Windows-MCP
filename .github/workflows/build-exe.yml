@@ -1,4 +1,4 @@
-name: Build Windows EXE
+name: Build Windows EXE + Installer
 
 on:
   push:
@@ -28,8 +28,7 @@ jobs:
         run: pip install uv
 
       - name: 安装项目依赖
-        run: |
-          uv pip install --system .
+        run: uv pip install --system .
 
       - name: 安装 PyInstaller
         run: pip install pyinstaller
@@ -41,7 +40,6 @@ jobs:
             --console `
             --name windows-mcp `
             --add-data "src/windows_mcp;windows_mcp" `
-            --add-data "setup_wizard.py;." `
             --hidden-import setup_wizard `
             --hidden-import comtypes `
             --hidden-import comtypes.client `
@@ -55,19 +53,32 @@ jobs:
             --hidden-import PIL `
             --hidden-import PIL.Image `
             --collect-all comtypes `
-            --collect-all pywin32 `
             --collect-all fastmcp `
-            --collect-all uuid7 `
             build_exe.py
+
+      - name: 安装 Inno Setup
+        run: choco install innosetup --no-progress -y
+
+      - name: 构建安装包
+        run: |
+          & "C:\Program Files (x86)\Inno Setup 6\ISCC.exe" installer.iss
 
       - name: 上传 EXE
         uses: actions/upload-artifact@v4
         with:
-          name: windows-mcp-${{ matrix.python-version }}-win64
+          name: windows-mcp-exe
           path: dist/windows-mcp.exe
+
+      - name: 上传安装包
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-mcp-setup
+          path: dist/Windows-MCP-Setup-*.exe
 
       - name: 发布 Release（仅 tag 触发）
         if: startsWith(github.ref, 'refs/tags/')
         uses: softprops/action-gh-release@v2
         with:
-          files: dist/windows-mcp.exe
+          files: |
+            dist/windows-mcp.exe
+            dist/Windows-MCP-Setup-*.exe
