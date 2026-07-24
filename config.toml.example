@@ -1,35 +1,23 @@
 # Windows-MCP 配置文件示例
 # 复制为 ~/.windows-mcp/config.toml 后修改
-# 或直接运行 windows-mcp.exe setup 交互生成
+# 或运行 windows-mcp.exe setup 交互生成
 
 [server]
 # 传输协议: "stdio" | "sse" | "streamable-http"
-# stdio     - 仅本机 AI 客户端（如 Claude Desktop）
-# sse       - 服务器推送事件，适合内网多机共享
-# streamable-http - HTTP 流式传输，生产推荐
 transport = "sse"
-
-# 绑定地址: 0.0.0.0 允许内网所有电脑连接，127.0.0.1 仅本机
+# 绑定地址（0.0.0.0 对内网开放，127.0.0.1 仅本机）
 host = "0.0.0.0"
-
-# 端口号
 port = 8000
-
-# 认证密钥（可选，建议内网设置一个简单密码防误操作）
-# auth_key = "your_secret_token"
-
-# TLS/HTTPS 证书（可选，内网一般不需要）
-# ssl_certfile = "cert.pem"
-# ssl_keyfile = "key.pem"
+# auth_key = "your_secret"
 
 [security]
-# IP 白名单（可选，限制只有指定 IP 可以连接）
-# ip_allowlist = ["192.168.1.0/24", "10.0.0.5"]
-
-# CORS 允许来源（仅浏览器客户端需要）
+# ip_allowlist = ["192.168.1.0/24"]
 # cors_origins = ["https://my-client.example.com"]
 
 [tools]
-# 禁用的工具列表（逗号分隔）
-# 内网共享时建议至少禁用 PowerShell
 exclude = ["PowerShell"]
+
+[local]
+# 额外暴露 127.0.0.1 本机专用端口（不需要认证）
+enabled = true
+port = 8001

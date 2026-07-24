@@ -15,6 +15,7 @@ def default_config():
         'transport': 'sse', 'host': '0.0.0.0', 'port': 8000,
         'auth_key': '', 'ip_allowlist': [], 'cors_origins': [],
         'tools_exclude': ['PowerShell'], 'autostart': True,
+        'local_enabled': False, 'local_port': 8001,
     }
 
 def generate_toml(cfg):
@@ -46,10 +47,12 @@ def get_exe_path():
     if getattr(sys, 'frozen', False): return sys.executable
     return sys.argv[0]
 
-def enable_autostart():
+def enable_autostart(use_serve_all=False):
+    '''添加开机自启。use_serve_all=True 时同时启动双端口。'''
     try:
         exe = get_exe_path()
-        subprocess.run(['reg','add',AUTOSTART_KEY,'/v',AUTOSTART_NAME,'/t','REG_SZ','/d',f'"{exe}" serve','/f'], capture_output=True, check=True)
+        cmd = f'"{exe}" serve-all' if use_serve_all else f'"{exe}" serve'
+        subprocess.run(['reg','add',AUTOSTART_KEY,'/v',AUTOSTART_NAME,'/t','REG_SZ','/d',cmd,'/f'], capture_output=True, check=True)
         return True
     except: return False
 
@@ -65,10 +68,18 @@ def is_autostart_enabled():
         return r.returncode == 0
     except: return False
 
-def start_server():
+def start_server(local_port=None):
+    '''启动 MCP 服务器，如果 local_port 指定则同时启动两个实例'''
     exe = get_exe_path()
     flag = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
+    # 主服务（内网共享）
     subprocess.Popen([exe, 'serve'], creationflags=flag)
+    # 本机专用服务（127.0.0.1，不需要认证）
+    if local_port:
+        subprocess.Popen(
+            [exe, 'serve', '--host', '127.0.0.1', '--port', str(local_port)],
+            creationflags=flag
+        )
 
 def quick_setup():
     cfg = default_config()
@@ -76,10 +87,14 @@ def quick_setup():
     CONFIG_FILE.write_text(generate_toml(cfg), encoding='utf-8')
     print(f'配置完成: {CONFIG_FILE}')
     if cfg['autostart']:
-        if enable_autostart(): print('已添加开机自启')
+        if enable_autostart(cfg.get('local_enabled', False)): print('已添加开机自启')
         else: print('警告: 开机自启设置失败')
     print('正在启动服务...')
-    start_server()
+    local_port = cfg['local_port'] if cfg.get('local_enabled') else None
+    start_server(local_port)
+    if local_port:
+        print(f'内网共享: {cfg["host"]}:{cfg["port"]}')
+        print(f'本机专用: 127.0.0.1:{local_port}')
     print('服务已启动！')
 
 # ── 命令行向导 ─────────────────────────────────
@@ -114,6 +129,13 @@ def console_wizard():
         if ips: cfg['ip_allowlist'] = [ip.strip() for ip in ips.split(',') if ip.strip()]
 
     print()
+    local_enable = input('额外开启本机专用端口 (127.0.0.1)？[y/N]: ').strip().lower()
+    cfg['local_enabled'] = local_enable == 'y'
+    if cfg['local_enabled']:
+        lp = input(f'本机端口号 [默认 {cfg["local_port"]}]: ').strip()
+        if lp: cfg['local_port'] = int(lp)
+
+    print()
     tools = input('禁用的工具 [默认 PowerShell]: ').strip()
     if tools: cfg['tools_exclude'] = [t.strip() for t in tools.split(',') if t.strip()]
 
@@ -126,7 +148,7 @@ def console_wizard():
     print(f'\n配置已保存: {CONFIG_FILE}')
 
     if cfg['autostart']:
-        ok = enable_autostart()
+        ok = enable_autostart(cfg.get('local_enabled', False))
         print('已添加开机自启' if ok else '警告: 开机自启设置失败')
     else:
         disable_autostart()
@@ -135,11 +157,14 @@ def console_wizard():
     print()
     start_now = input('是否立即启动服务？[Y/n]: ').strip().lower()
     if start_now != 'n':
-        start_server()
+        local_port = cfg['local_port'] if cfg.get('local_enabled') else None
+        start_server(local_port)
         print('服务已启动！')
 
     if cfg['transport'] != 'stdio':
-        print(f'\n其他电脑连接地址: http://{{本机IP}}:{cfg["port"]}/{cfg["transport"]}')
+        print(f'\n内网共享: http://{{本机IP}}:{cfg["port"]}/{cfg["transport"]}')
+        if cfg.get('local_enabled'):
+            print(f'本机专用: http://127.0.0.1:{cfg["local_port"]}/{cfg["transport"]}')
         if cfg['auth_key']:
             print(f'认证头: Authorization: Bearer {cfg["auth_key"]}')
     print()
@@ -192,6 +217,18 @@ def gui_wizard():
     ttk.Label(main, text='留空不启用', foreground='gray').grid(row=r, column=2, sticky='w', pady=5)
     r += 1
 
+    # 本机专用端口
+    ttk.Label(main, text='本机端口:').grid(row=r, column=0, sticky='w', pady=5)
+    local_enabled_var = tk.BooleanVar(value=False)
+    ttk.Checkbutton(main, variable=local_enabled_var, text='额外开启 127.0.0.1 本机专用端口').grid(row=r, column=1, columnspan=2, sticky='w', pady=5, padx=5)
+    r += 1
+    ttk.Label(main, text='本机端口号:').grid(row=r, column=0, sticky='w', pady=5)
+    local_port_var = tk.IntVar(value=8001)
+    local_port_entry = ttk.Entry(main, textvariable=local_port_var, width=24)
+    local_port_entry.grid(row=r, column=1, sticky='w', pady=5, padx=5)
+    ttk.Label(main, text='仅 127.0.0.1 可访问', foreground='gray').grid(row=r, column=2, sticky='w', pady=5)
+    r += 1
+
     # IP白名单
     ttk.Label(main, text='IP 白名单:').grid(row=r, column=0, sticky='w', pady=5)
     ip_var = tk.StringVar()
@@ -227,16 +264,17 @@ def gui_wizard():
     btn.grid(row=r, column=0, columnspan=3, pady=15)
 
     def do_save_and_start():
-        _save(cfg, transport_var, host_var, port_var, auth_var, ip_var, tools_var, autostart_var)
+        _save(cfg, transport_var, host_var, port_var, auth_var, ip_var, tools_var, autostart_var, local_enabled_var, local_port_var)
         status_var.set('正在启动服务...')
         root.update()
-        start_server()
+        local_port = cfg['local_port'] if cfg.get('local_enabled') else None
+        start_server(local_port)
         messagebox.showinfo('配置完成',
-            f'服务已启动！\n\n配置文件: {CONFIG_FILE}\n开机自启: {"是" if cfg["autostart"] else "否"}\n\n其他电脑连接地址:\nhttp://本机IP:{cfg["port"]}/{cfg["transport"]}')
+            f'服务已启动！\n\n配置文件: {CONFIG_FILE}\n开机自启: {"是" if cfg["autostart"] else "否"}\n\n内网共享: http://本机IP:{cfg["port"]}/{cfg["transport"]}' + (f'\n本机专用: http://127.0.0.1:{cfg["local_port"]}/{cfg["transport"]}' if cfg.get('local_enabled') else ''))
         root.destroy()
 
     def do_save_only():
-        _save(cfg, transport_var, host_var, port_var, auth_var, ip_var, tools_var, autostart_var)
+        _save(cfg, transport_var, host_var, port_var, auth_var, ip_var, tools_var, autostart_var, local_enabled_var, local_port_var)
         messagebox.showinfo('已保存', f'配置文件: {CONFIG_FILE}\n\n运行 windows-mcp serve 启动服务。')
         root.destroy()
 
@@ -247,7 +285,7 @@ def gui_wizard():
     root.mainloop()
 
 
-def _save(cfg, transport_var, host_var, port_var, auth_var, ip_var, tools_var, autostart_var):
+def _save(cfg, transport_var, host_var, port_var, auth_var, ip_var, tools_var, autostart_var, local_enabled_var=None, local_port_var=None):
     cfg['transport'] = transport_var.get()
     cfg['host'] = host_var.get()
     cfg['port'] = port_var.get()
@@ -257,9 +295,12 @@ def _save(cfg, transport_var, host_var, port_var, auth_var, ip_var, tools_var, a
     if tools_var.get():
         cfg['tools_exclude'] = [t.strip() for t in tools_var.get().split(',') if t.strip()]
     cfg['autostart'] = autostart_var.get()
+    if local_enabled_var is not None:
+        cfg['local_enabled'] = local_enabled_var.get()
+        cfg['local_port'] = local_port_var.get()
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     CONFIG_FILE.write_text(generate_toml(cfg), encoding='utf-8')
     if cfg['autostart']:
-        enable_autostart()
+        enable_autostart(cfg.get('local_enabled', False))
     else:
         disable_autostart()
