@@ -23,8 +23,8 @@ WizardStyle=modern
 PrivilegesRequired=lowest
 
 [Tasks]
-Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "附加快捷方式:"
-Name: "startup"; Description: "开机自动启动服务"; GroupDescription: "启动选项:"
+Name: "desktopicon"; Description: "Create desktop shortcut"; GroupDescription: "Additional shortcuts:"
+Name: "startup"; Description: "Auto-start server at login"; GroupDescription: "Startup options:"
 
 [Files]
 Source: "dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
@@ -38,7 +38,7 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch configuration wizard"; Flags: nowait postinstall skipifsilent
 
 [Registry]
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "Windows-MCP"; ValueData: """{app}\{#MyAppExeName}"" serve"; Flags: uninsdeletevalue; Tasks: startup
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "Windows-MCP"; ValueData: """{app}\{#MyAppExeName}"" serve-all"; Flags: uninsdeletevalue; Tasks: startup
 
 [UninstallRun]
 Filename: "reg"; Parameters: "delete HKCU\Software\Microsoft\Windows\CurrentVersion\Run /v Windows-MCP /f"; Flags: runhidden
