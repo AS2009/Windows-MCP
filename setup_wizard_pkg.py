@@ -40,7 +40,8 @@ def generate_toml(cfg):
         tools = ', '.join(f'"{t}"' for t in cfg['tools_exclude'])
         lines.append(f'exclude = [{tools}]')
         lines.append('')
-    return '\n'.join(lines)
+    return '
+'.join(lines)
 
 def get_exe_path():
     if getattr(sys, 'frozen', False): return sys.executable
@@ -87,7 +88,7 @@ def _read_config_safe():
     result = {}
     current_section = None
     try:
-        for line in CONFIG_FILE.read_text(encoding='utf-8').split(chr(10)):
+        for line in CONFIG_FILE.read_text(encoding='utf-8').split('\n'):
             line = line.strip()
             if not line or line.startswith('#'):
                 continue
