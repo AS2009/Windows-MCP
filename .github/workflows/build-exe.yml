@@ -51,6 +51,7 @@ jobs:
             --hidden-import fastmcp `
             --hidden-import PIL `
             --hidden-import PIL.Image `
+            --hidden-import tkinter `
             --collect-all comtypes `
             --collect-all fastmcp `
             build_exe.py

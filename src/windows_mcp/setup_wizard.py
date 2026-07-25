@@ -40,6 +40,12 @@ def generate_toml(cfg):
         tools = ', '.join(f'"{t}"' for t in cfg['tools_exclude'])
         lines.append(f'exclude = [{tools}]')
         lines.append('')
+    if cfg.get('local_enabled'):
+        lines.append('')
+        lines.append('[local]')
+        lines.append('enabled = true')
+        lines.append(f'port = {cfg["local_port"]}')
+        lines.append('')
     return '\n'.join(lines)
 
 def get_exe_path():

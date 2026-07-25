@@ -5,7 +5,7 @@
 #define MyAppExeName "windows-mcp.exe"
 
 [Setup]
-AppId={{B8F4A3D2-7E6C-4A1B-9D5F-8C2E0A7B3D1F}
+AppId={{B8F4A3D2-7E6C-4A1B-9D5F-8C2E0A7B3D1F}}
 AppName={#MyAppName}
 AppVersion={#MyAppVersion}
 AppPublisher={#MyAppPublisher}
