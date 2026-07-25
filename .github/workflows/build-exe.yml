@@ -36,12 +36,10 @@ jobs:
       - name: 构建 EXE
         run: |
           pyinstaller `
-            --paths . `
             --onefile `
             --console `
             --name windows-mcp `
             --add-data "src/windows_mcp;windows_mcp" `
-            --hidden-import setup_wizard `
             --hidden-import comtypes `
             --hidden-import comtypes.client `
             --hidden-import comtypes.gen `

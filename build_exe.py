@@ -11,12 +11,10 @@
 
 import sys
 import subprocess
-# 顶层导入确保 PyInstaller 打包时发现 setup_wizard
-from setup_wizard import gui_wizard, console_wizard, quick_setup, _read_config_safe
+from windows_mcp.setup_wizard import gui_wizard, console_wizard, quick_setup, _read_config_safe
 
 
 def _read_local_config():
-    """读取 [local] 配置段，返回 (enabled, port)"""
     try:
         cfg = _read_config_safe()
         local = cfg.get('local', {})
@@ -26,23 +24,18 @@ def _read_local_config():
 
 
 def run_serve_all():
-    """启动双端口：主端口 + 127.0.0.1 本机端口"""
-    import os
     exe = sys.executable if getattr(sys, 'frozen', False) else sys.argv[0]
     flag = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
-
     enabled, local_port = _read_local_config()
 
     p1 = subprocess.Popen([exe, 'serve'], creationflags=flag)
     print(f'[主服务] PID {p1.pid} 已启动')
-
     if enabled:
         p2 = subprocess.Popen(
             [exe, 'serve', '--host', '127.0.0.1', '--port', str(local_port)],
             creationflags=flag
         )
         print(f'[本机专用] PID {p2.pid}  127.0.0.1:{local_port}')
-
     print('服务运行中，关闭此窗口停止服务...')
     try:
         p1.wait()
