@@ -31,6 +31,9 @@ import subprocess
 import click
 import os
 import sys
+import threading
+
+from windows_mcp.tray import WindowsMCPTray
 
 logger = logging.getLogger(__name__)
 
@@ -517,6 +520,13 @@ def main():
     envvar="WINDOWS_MCP_STATELESS_HTTP",
     show_default=True,
 )
+@click.option(
+    "--tray",
+    help="Run with a system tray icon (no console window). Double-click the tray icon to open the web interface, right-click for menu.",
+    is_flag=True,
+    default=False,
+    show_default=True,
+)
 def serve(
     ctx,
     transport,
@@ -535,6 +545,7 @@ def serve(
     oauth_client_id,
     oauth_client_secret,
     stateless_http,
+    tray,
 ):
     asyncio.set_event_loop_policy(asyncio.WindowsSelectorEventLoopPolicy())
     if transport == Transport.STDIO.value:
@@ -669,6 +680,70 @@ def serve(
         cli_tools or "all",
         cli_exclude or "none",
     )
+    try:
+        _run_server(
+    # --- Tray mode: start tray icon + server in background ---
+    if tray:
+        if not auth_key and not allow_insecure_remote:
+            raise click.ClickException(
+                "--tray requires --auth-key when binding to non-loopback addresses."
+            )
+        stop_event = threading.Event()
+        server_thread: threading.Thread | None = None
+
+        def _run_in_thread():
+            try:
+                _run_server(
+                    transport=transport,
+                    host=host,
+                    port=port,
+                    auth_key=auth_key,
+                    ip_allowlist=parsed_allowlist,
+                    explicit_tools=cli_tools or None,
+                    exclude_tools=cli_exclude or None,
+                    ssl_certfile=ssl_certfile,
+                    ssl_keyfile=ssl_keyfile,
+                    oauth_validator=oauth_validator,
+                    cors_origins=cli_cors or None,
+                    allowed_hosts=computed_allowed_hosts,
+                    stateless_http=stateless_http,
+                )
+            except Exception:
+                logger.error("Server error in tray mode", exc_info=True)
+            finally:
+                stop_event.set()
+
+        def _on_tray_exit():
+            logger.info("Tray exit requested")
+            stop_event.set()
+
+        tray_icon = WindowsMCPTray(host=host, port=port, on_exit=_on_tray_exit)
+        tray_icon.start()
+
+        # Show tray balloon notification
+        display_host = host if host != "0.0.0.0" else "localhost"
+        tray_icon._show_balloon(
+            "Windows-MCP Started",
+            f"Server running at {display_host}:{port}\nRight-click tray icon for menu.",
+        )
+
+        server_thread = threading.Thread(target=_run_in_thread, daemon=True)
+        server_thread.start()
+
+        click.echo(f"Windows-MCP tray mode: http://{display_host}:{port}/sse")
+        click.echo("Tray icon active — right-click for menu, double-click for web interface.")
+
+        # Block until stop_event is set
+        try:
+            while not stop_event.is_set():
+                import time
+                time.sleep(0.5)
+        except KeyboardInterrupt:
+            pass
+
+        tray_icon.stop()
+        return  # Don't fall through to normal _run_server
+
     try:
         _run_server(
             transport=transport,
