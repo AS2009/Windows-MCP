@@ -405,7 +405,7 @@ def main():
 @click.option(
     "--host",
     help="Host to bind the SSE/Streamable HTTP server.",
-    default="localhost",
+    default="0.0.0.0",
     type=str,
     show_default=True,
 )
