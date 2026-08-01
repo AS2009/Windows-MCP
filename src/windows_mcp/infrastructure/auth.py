@@ -12,6 +12,7 @@ from starlette.types import ASGIApp
 
 
 _PUBLIC_PATHS = frozenset({
+    "/",
     "/health",
     "/.well-known/oauth-authorization-server",
     "/oauth/register",

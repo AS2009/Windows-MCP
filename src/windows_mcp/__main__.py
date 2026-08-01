@@ -229,7 +229,62 @@ def _build_mcp() -> FastMCP:
 
     _mcp = FastMCP(name="windows-mcp", instructions=instructions, lifespan=lifespan)
     register_all(_mcp, get_desktop=_get_desktop, get_analytics=_get_analytics)
+    _register_web_routes(_mcp)
     return _mcp
+
+
+def _index_html() -> str:
+    """Return the friendly status page served at ``/`` (no sensitive data)."""
+    return dedent("""\
+        <!doctype html>
+        <html lang="zh-CN">
+        <head>
+          <meta charset="utf-8">
+          <meta name="viewport" content="width=device-width, initial-scale=1">
+          <title>Windows-MCP Server</title>
+          <style>
+            body { font-family: "Microsoft YaHei", "Segoe UI", sans-serif; background:#f5f7fa; margin:0; }
+            .card { max-width:640px; margin:60px auto; background:#fff; border-radius:12px;
+                    box-shadow:0 2px 12px rgba(0,0,0,.08); padding:32px 40px; }
+            h1 { font-size:22px; color:#0078d4; margin:0 0 6px; }
+            .badge { display:inline-block; background:#e6f4ea; color:#137333; font-size:13px;
+                     border-radius:20px; padding:3px 12px; margin-bottom:18px; }
+            code { background:#f1f3f5; padding:2px 6px; border-radius:4px; font-size:13px; }
+            .box { background:#f8f9fb; border:1px solid #e5e8ee; border-radius:8px; padding:12px 16px;
+                   margin:12px 0; font-size:14px; line-height:1.7; word-break:break-all; }
+            .tip { color:#666; font-size:13px; line-height:1.6; }
+          </style>
+        </head>
+        <body>
+          <div class="card">
+            <h1>Windows-MCP Server</h1>
+            <div><span class="badge">● 运行中</span></div>
+            <p class="tip">这是一个 MCP(Model Context Protocol)服务器，供 AI 客户端连接，
+            不是普通网站。连接时需要在请求头中携带认证密钥。</p>
+            <div class="box">
+              <div>SSE 地址: <code>/sse</code></div>
+              <div>请求头: <code>Authorization: Bearer &lt;密钥&gt;</code></div>
+              <div>健康检查: <code>/health</code></div>
+            </div>
+            <p class="tip">示例: <code>curl -H "Authorization: Bearer &lt;密钥&gt;" http://本机IP:端口/sse</code></p>
+          </div>
+        </body>
+        </html>
+        """)
+
+
+def _register_web_routes(mcp: FastMCP) -> None:
+    """Register the friendly status page and the health endpoint."""
+    from starlette.responses import HTMLResponse, JSONResponse
+
+    async def health(request):
+        return JSONResponse({"status": "ok", "server": "windows-mcp"})
+
+    async def index(request):
+        return HTMLResponse(_index_html())
+
+    mcp.custom_route("/health", methods=["GET"])(health)
+    mcp.custom_route("/", methods=["GET"])(index)
 
 
 def __getattr__(name: str):
