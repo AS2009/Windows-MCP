@@ -59,7 +59,8 @@ def test_non_windows_is_safe(monkeypatch):
     assert fw.rule_exists(8000) is False
 
 
-def test_run_elevated_netsh_non_windows():
+def test_run_elevated_netsh_non_windows(monkeypatch):
+    monkeypatch.setattr(sys, "platform", "darwin")
     ok, message = fw._run_elevated_netsh("advfirewall firewall add rule x")
     assert not ok
     assert "仅支持 Windows" in message
