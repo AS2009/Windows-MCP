@@ -1,5 +1,5 @@
 #define MyAppName "Windows-MCP"
-#define MyAppVersion "0.8.6"
+#define MyAppVersion "0.8.7"
 #define MyAppPublisher "AS2009"
 #define MyAppURL "https://github.com/AS2009/Windows-MCP"
 #define MyAppExeName "windows-mcp.exe"
@@ -28,11 +28,13 @@ Name: "startup"; Description: "Auto-start server at login"; GroupDescription: "S
 
 [Files]
 Source: "dist\{#MyAppExeName}"; DestDir: "{app}"; Flags: ignoreversion
+Source: "Windows-MCP.vbs"; DestDir: "{app}"; Flags: ignoreversion
 
 [Icons]
-Name: "{group}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Comment: "Configure and start Windows-MCP service"
+Name: "{group}\{#MyAppName} 配置向导"; Filename: "{app}\{#MyAppExeName}"; Comment: "Configure Windows-MCP"
+Name: "{group}\启动 Windows-MCP 服务"; Filename: "{app}\{#MyAppExeName}"; Parameters: "serve --tray"; Comment: "Start the server with a tray icon"
 Name: "{group}\Uninstall Windows-MCP"; Filename: "{uninstallexe}"
-Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: desktopicon
+Name: "{autodesktop}\启动 Windows-MCP 服务"; Filename: "{app}\{#MyAppExeName}"; Parameters: "serve --tray"; Tasks: desktopicon
 
 [Run]
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch configuration wizard"; Flags: nowait postinstall skipifsilent

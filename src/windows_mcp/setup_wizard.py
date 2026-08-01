@@ -124,6 +124,15 @@ def _is_loopback_host(host):
     return host in ('127.0.0.1', 'localhost', '::1') or host.startswith('127.')
 
 
+def mcp_endpoint_path(transport):
+    '''返回 MCP 客户端实际使用的端点路径（与 fastmcp 挂载点一致）。'''
+    if transport == 'streamable-http':
+        return '/mcp/'
+    if transport == 'sse':
+        return '/sse'
+    return ''
+
+
 def ensure_firewall(port):
     '''自动开放防火墙 TCP 端口，返回 (ok, message)。可能弹出 UAC 授权框。'''
     try:
@@ -188,9 +197,12 @@ def quick_setup():
     print('正在启动服务...')
     local_port = cfg['local_port'] if cfg.get('local_enabled') else None
     start_server(local_port)
+    endpoint = mcp_endpoint_path(cfg['transport'])
     if local_port:
-        print(f'内网共享: {cfg["host"]}:{cfg["port"]}')
-        print(f'本机专用: 127.0.0.1:{local_port}')
+        print(f'内网共享: http://{cfg["host"]}:{cfg["port"]}{endpoint}')
+        print(f'本机专用: http://127.0.0.1:{local_port}{endpoint}')
+    else:
+        print(f'连接地址: http://{cfg["host"]}:{cfg["port"]}{endpoint}')
     print('服务已启动！')
 
 # ── 命令行向导 ─────────────────────────────────
@@ -268,9 +280,10 @@ def console_wizard():
         print('服务已启动！')
 
     if cfg['transport'] != 'stdio':
-        print(f'\n内网共享: http://{{本机IP}}:{cfg["port"]}/{cfg["transport"]}')
+        endpoint = mcp_endpoint_path(cfg['transport'])
+        print(f'\n内网共享: http://{{本机IP}}:{cfg["port"]}{endpoint}')
         if cfg.get('local_enabled'):
-            print(f'本机专用: http://127.0.0.1:{cfg["local_port"]}/{cfg["transport"]}')
+            print(f'本机专用: http://127.0.0.1:{cfg["local_port"]}{endpoint}')
         if cfg['auth_key']:
             print(f'认证头: Authorization: Bearer {cfg["auth_key"]}')
     print()
@@ -286,6 +299,25 @@ def gui_wizard():
         return console_wizard()
 
     cfg = default_config()
+    # 载入已有配置，避免覆盖用户之前的设置
+    try:
+        existing = _read_config_safe()
+        server = existing.get('server', {})
+        if server.get('transport'):
+            cfg['transport'] = server['transport']
+        if server.get('host'):
+            cfg['host'] = server['host']
+        if server.get('port'):
+            cfg['port'] = server['port']
+        if server.get('auth_key'):
+            cfg['auth_key'] = server['auth_key']
+        local = existing.get('local', {})
+        if local.get('enabled') is not None:
+            cfg['local_enabled'] = local['enabled']
+        if local.get('port'):
+            cfg['local_port'] = local['port']
+    except Exception:
+        pass
     root = tk.Tk()
     root.title('Windows-MCP 配置向导')
     root.geometry('540x640')
@@ -300,36 +332,36 @@ def gui_wizard():
 
     # 传输协议
     ttk.Label(main, text='传输协议:').grid(row=r, column=0, sticky='w', pady=5)
-    transport_var = tk.StringVar(value='sse')
+    transport_var = tk.StringVar(value=cfg['transport'])
     ttk.Combobox(main, textvariable=transport_var, values=['sse','streamable-http','stdio'], state='readonly', width=20).grid(row=r, column=1, sticky='w', pady=5, padx=5)
     r += 1
 
     # 地址
     ttk.Label(main, text='绑定地址:').grid(row=r, column=0, sticky='w', pady=5)
-    host_var = tk.StringVar(value='0.0.0.0')
+    host_var = tk.StringVar(value=cfg['host'])
     ttk.Entry(main, textvariable=host_var, width=24).grid(row=r, column=1, sticky='w', pady=5, padx=5)
     r += 1
 
     # 端口
     ttk.Label(main, text='端口:').grid(row=r, column=0, sticky='w', pady=5)
-    port_var = tk.IntVar(value=8000)
+    port_var = tk.IntVar(value=cfg['port'])
     ttk.Entry(main, textvariable=port_var, width=24).grid(row=r, column=1, sticky='w', pady=5, padx=5)
     r += 1
 
     # 密钥
     ttk.Label(main, text='认证密钥:').grid(row=r, column=0, sticky='w', pady=5)
-    auth_var = tk.StringVar()
+    auth_var = tk.StringVar(value=cfg['auth_key'])
     ttk.Entry(main, textvariable=auth_var, width=24, show='*').grid(row=r, column=1, sticky='w', pady=5, padx=5)
     ttk.Label(main, text='留空不启用', foreground='gray').grid(row=r, column=2, sticky='w', pady=5)
     r += 1
 
     # 本机专用端口
     ttk.Label(main, text='本机端口:').grid(row=r, column=0, sticky='w', pady=5)
-    local_enabled_var = tk.BooleanVar(value=False)
+    local_enabled_var = tk.BooleanVar(value=cfg['local_enabled'])
     ttk.Checkbutton(main, variable=local_enabled_var, text='额外开启 127.0.0.1 本机专用端口').grid(row=r, column=1, columnspan=2, sticky='w', pady=5, padx=5)
     r += 1
     ttk.Label(main, text='本机端口号:').grid(row=r, column=0, sticky='w', pady=5)
-    local_port_var = tk.IntVar(value=8001)
+    local_port_var = tk.IntVar(value=cfg['local_port'])
     local_port_entry = ttk.Entry(main, textvariable=local_port_var, width=24)
     local_port_entry.grid(row=r, column=1, sticky='w', pady=5, padx=5)
     ttk.Label(main, text='仅 127.0.0.1 可访问', foreground='gray').grid(row=r, column=2, sticky='w', pady=5)
@@ -337,27 +369,41 @@ def gui_wizard():
 
     # IP白名单
     ttk.Label(main, text='IP 白名单:').grid(row=r, column=0, sticky='w', pady=5)
-    ip_var = tk.StringVar()
+    ip_var = tk.StringVar(value=', '.join(cfg['ip_allowlist']))
     ttk.Entry(main, textvariable=ip_var, width=24).grid(row=r, column=1, sticky='w', pady=5, padx=5)
     ttk.Label(main, text='逗号分隔', foreground='gray').grid(row=r, column=2, sticky='w', pady=5)
     r += 1
 
     # 禁用工具
     ttk.Label(main, text='禁用工具:').grid(row=r, column=0, sticky='w', pady=5)
-    tools_var = tk.StringVar(value='PowerShell')
+    tools_var = tk.StringVar(value=', '.join(cfg['tools_exclude']))
     ttk.Entry(main, textvariable=tools_var, width=24).grid(row=r, column=1, sticky='w', pady=5, padx=5)
     r += 1
 
     # 开机自启
     ttk.Label(main, text='开机自启:').grid(row=r, column=0, sticky='w', pady=5)
-    autostart_var = tk.BooleanVar(value=True)
+    autostart_var = tk.BooleanVar(value=cfg['autostart'])
     ttk.Checkbutton(main, variable=autostart_var, text='Windows 启动时自动运行服务').grid(row=r, column=1, columnspan=2, sticky='w', pady=5, padx=5)
     r += 1
 
     # 连接说明
     info = ttk.LabelFrame(main, text='内网连接说明', padding=10)
     info.grid(row=r, column=0, columnspan=3, sticky='ew', pady=(15, 10))
-    tk.Label(info, text='启动后，其他电脑的 AI Agent 连接地址:\n  http://<本机IP>:端口/sse\n\n如果设置了认证密钥，需在请求头中添加:\n  Authorization: Bearer <密钥>', justify='left', fg='darkblue').pack()
+    info_text = tk.StringVar()
+
+    def _update_info(*_):
+        endpoint = mcp_endpoint_path(transport_var.get())
+        info_text.set(
+            '启动后，其他电脑的 AI Agent 连接地址:\n'
+            f'  http://<本机IP>:{port_var.get()}{endpoint}\n\n'
+            '如果设置了认证密钥，需在请求头中添加:\n'
+            '  Authorization: Bearer <密钥>'
+        )
+
+    transport_var.trace_add('write', _update_info)
+    port_var.trace_add('write', _update_info)
+    _update_info()
+    tk.Label(info, textvariable=info_text, justify='left', fg='darkblue').pack()
     r += 1
 
     # 状态
@@ -377,8 +423,9 @@ def gui_wizard():
         start_server(local_port)
         key_text = f'\n\n认证密钥: {cfg["auth_key"]}' if cfg.get('auth_key') else ''
         fw_text = f'\n防火墙: {"已开放端口 " + str(cfg["port"]) if fw_status[0] else "开放失败 - " + fw_status[1]}' if fw_status else ''
+        endpoint = mcp_endpoint_path(cfg['transport'])
         messagebox.showinfo('配置完成',
-            f'服务已启动！\n\n配置文件: {CONFIG_FILE}\n开机自启: {"是" if cfg["autostart"] else "否"}{key_text}{fw_text}\n\n内网共享: http://本机IP:{cfg["port"]}/{cfg["transport"]}' + (f'\n本机专用: http://127.0.0.1:{cfg["local_port"]}/{cfg["transport"]}' if cfg.get('local_enabled') else ''))
+            f'服务已启动！\n\n配置文件: {CONFIG_FILE}\n开机自启: {"是" if cfg["autostart"] else "否"}{key_text}{fw_text}\n\n内网共享: http://本机IP:{cfg["port"]}{endpoint}' + (f'\n本机专用: http://127.0.0.1:{cfg["local_port"]}{endpoint}' if cfg.get('local_enabled') else ''))
         root.destroy()
 
     def do_save_only():
