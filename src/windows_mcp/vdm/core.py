@@ -376,6 +376,11 @@ class VirtualDesktopManager:
 
     def __init__(self):
         self._manager = None
+        # Always define both attributes so fallback code paths on platforms
+        # without virtual-desktop COM support (e.g. Windows 8.1) can check
+        # them with `if not self._internal_manager` instead of raising
+        # AttributeError.
+        self._internal_manager = None
         try:
             # Ensure COM is initialized on this thread (RPC_E_CHANGED_MODE or S_OK/S_FALSE)
             # COINIT_APARTMENTTHREADED = 0x2, COINIT_MULTITHREADED = 0x0
