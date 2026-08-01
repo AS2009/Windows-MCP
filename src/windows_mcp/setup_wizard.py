@@ -113,11 +113,28 @@ def _ensure_auth_key(cfg):
     if cfg.get('transport') == 'stdio':
         return cfg.get('auth_key')
     host = cfg.get('host', '0.0.0.0')
-    is_loopback = host in ('127.0.0.1', 'localhost', '::1') or str(host).startswith('127.')
-    if not cfg.get('auth_key') and not is_loopback:
+    if not cfg.get('auth_key') and not _is_loopback_host(host):
         import secrets
         cfg['auth_key'] = secrets.token_urlsafe(16)
     return cfg.get('auth_key')
+
+
+def _is_loopback_host(host):
+    host = str(host or '')
+    return host in ('127.0.0.1', 'localhost', '::1') or host.startswith('127.')
+
+
+def ensure_firewall(port):
+    '''自动开放防火墙 TCP 端口，返回 (ok, message)。可能弹出 UAC 授权框。'''
+    try:
+        from windows_mcp.infrastructure import ensure_firewall_open, manual_netsh_hint
+        ok, message = ensure_firewall_open(port, allow_elevate=True)
+        if not ok:
+            message = message + '\n手动命令（管理员运行）:\n' + manual_netsh_hint(port)
+        return ok, message
+    except Exception as exc:
+        return False, str(exc)
+
 
 def _read_config_safe():
     '''安全读取配置文件，返回 dict。用于 build_exe.py 读取 local 端口配置。'''
@@ -161,6 +178,10 @@ def quick_setup():
     print(f'配置完成: {CONFIG_FILE}')
     if cfg['auth_key']:
         print(f'认证密钥: {cfg["auth_key"]}')
+    if cfg['transport'] != 'stdio' and not _is_loopback_host(cfg['host']):
+        print('正在开放防火墙端口...')
+        ok, message = ensure_firewall(cfg['port'])
+        print('防火墙端口已开放' if ok else f'警告: 防火墙开放失败\n{message}')
     if cfg['autostart']:
         if enable_autostart(cfg.get('local_enabled', False), cfg['transport']): print('已添加开机自启')
         else: print('警告: 开机自启设置失败')
@@ -233,6 +254,11 @@ def console_wizard():
     else:
         disable_autostart()
         print('已移除开机自启')
+
+    if cfg['transport'] != 'stdio' and not _is_loopback_host(cfg['host']):
+        print('\n正在开放防火墙端口...')
+        ok, message = ensure_firewall(cfg['port'])
+        print('防火墙端口已开放' if ok else f'警告: 防火墙开放失败\n{message}')
 
     print()
     start_now = input('是否立即启动服务？[Y/n]: ').strip().lower()
@@ -344,20 +370,22 @@ def gui_wizard():
     btn.grid(row=r, column=0, columnspan=3, pady=15)
 
     def do_save_and_start():
-        _save(cfg, transport_var, host_var, port_var, auth_var, ip_var, tools_var, autostart_var, local_enabled_var, local_port_var)
+        fw_status = _save(cfg, transport_var, host_var, port_var, auth_var, ip_var, tools_var, autostart_var, local_enabled_var, local_port_var)
         status_var.set('正在启动服务...')
         root.update()
         local_port = cfg['local_port'] if cfg.get('local_enabled') else None
         start_server(local_port)
         key_text = f'\n\n认证密钥: {cfg["auth_key"]}' if cfg.get('auth_key') else ''
+        fw_text = f'\n防火墙: {"已开放端口 " + str(cfg["port"]) if fw_status[0] else "开放失败 - " + fw_status[1]}' if fw_status else ''
         messagebox.showinfo('配置完成',
-            f'服务已启动！\n\n配置文件: {CONFIG_FILE}\n开机自启: {"是" if cfg["autostart"] else "否"}{key_text}\n\n内网共享: http://本机IP:{cfg["port"]}/{cfg["transport"]}' + (f'\n本机专用: http://127.0.0.1:{cfg["local_port"]}/{cfg["transport"]}' if cfg.get('local_enabled') else ''))
+            f'服务已启动！\n\n配置文件: {CONFIG_FILE}\n开机自启: {"是" if cfg["autostart"] else "否"}{key_text}{fw_text}\n\n内网共享: http://本机IP:{cfg["port"]}/{cfg["transport"]}' + (f'\n本机专用: http://127.0.0.1:{cfg["local_port"]}/{cfg["transport"]}' if cfg.get('local_enabled') else ''))
         root.destroy()
 
     def do_save_only():
-        _save(cfg, transport_var, host_var, port_var, auth_var, ip_var, tools_var, autostart_var, local_enabled_var, local_port_var)
+        fw_status = _save(cfg, transport_var, host_var, port_var, auth_var, ip_var, tools_var, autostart_var, local_enabled_var, local_port_var)
         key_text = f'\n\n认证密钥: {cfg["auth_key"]}' if cfg.get('auth_key') else ''
-        messagebox.showinfo('已保存', f'配置文件: {CONFIG_FILE}{key_text}\n\n运行 windows-mcp serve 启动服务。')
+        fw_text = f'\n防火墙: {"已开放端口 " + str(cfg["port"]) if fw_status[0] else "开放失败 - " + fw_status[1]}' if fw_status else ''
+        messagebox.showinfo('已保存', f'配置文件: {CONFIG_FILE}{key_text}{fw_text}\n\n运行 windows-mcp serve 启动服务。')
         root.destroy()
 
     ttk.Button(btn, text='保存并启动', command=do_save_and_start, width=15).pack(side='left', padx=5)
@@ -387,3 +415,6 @@ def _save(cfg, transport_var, host_var, port_var, auth_var, ip_var, tools_var, a
         enable_autostart(cfg.get('local_enabled', False), cfg['transport'])
     else:
         disable_autostart()
+    if cfg['transport'] != 'stdio' and not _is_loopback_host(cfg['host']):
+        return ensure_firewall(cfg['port'])
+    return None

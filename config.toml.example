@@ -16,6 +16,8 @@ port = 8000
 auth_key = "请改成随机密钥"
 # 如需允许无认证的内网访问（不推荐），取消注释:
 # allow_insecure_remote = true
+# 自动开放 Windows 防火墙端口（默认 true；首次会弹出 UAC 授权）:
+# open_firewall = true
 
 [security]
 # 只允许这些客户端 IP / 网段访问（双网卡场景可各写一条）:

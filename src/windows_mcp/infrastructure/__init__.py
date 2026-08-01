@@ -19,6 +19,14 @@ from windows_mcp.infrastructure.config import (
     write_config,
 )
 from windows_mcp.infrastructure.oauth import OAuthStore, build_oauth_routes, validate_oauth_token
+from windows_mcp.infrastructure.firewall import (
+    add_rule,
+    delete_rule,
+    ensure_firewall_open,
+    manual_netsh_hint,
+    rule_exists,
+    rule_name,
+)
 
 __all__ = [
     "AuthKeyMiddleware",
@@ -42,4 +50,10 @@ __all__ = [
     "OAuthStore",
     "build_oauth_routes",
     "validate_oauth_token",
+    "add_rule",
+    "delete_rule",
+    "ensure_firewall_open",
+    "manual_netsh_hint",
+    "rule_exists",
+    "rule_name",
 ]

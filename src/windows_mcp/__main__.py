@@ -451,6 +451,13 @@ def main():
     show_default=True,
 )
 @click.option(
+    "--no-firewall",
+    help="Do not automatically add a Windows Firewall inbound rule for the server port.",
+    is_flag=True,
+    default=False,
+    show_default=True,
+)
+@click.option(
     "--ip-allowlist",
     help="Comma-separated list of allowed client IPs or CIDR ranges (e.g. '10.0.0.0/8,192.168.1.5'). IPv4 and IPv6 supported.",
     default=None,
@@ -538,6 +545,7 @@ def serve(
     config,
     auth_key,
     allow_insecure_remote,
+    no_firewall,
     ip_allowlist,
     tools,
     exclude_tools,
@@ -581,6 +589,10 @@ def serve(
             False,
         )
     )
+    if _param_explicit(ctx, "no_firewall"):
+        open_firewall = not no_firewall
+    else:
+        open_firewall = cfg.server.open_firewall
     ssl_certfile = _choose_value(ctx, "ssl_certfile", ssl_certfile, cfg.server.ssl_certfile, None)
     ssl_keyfile = _choose_value(ctx, "ssl_keyfile", ssl_keyfile, cfg.server.ssl_keyfile, None)
     oauth_client_id = _choose_value(
@@ -682,6 +694,31 @@ def serve(
         cli_tools or "all",
         cli_exclude or "none",
     )
+
+    # --- Automatically open the Windows Firewall port for LAN access ---
+    if (
+        open_firewall
+        and transport != Transport.STDIO.value
+        and not is_loopback_host(host)
+    ):
+        try:
+            from windows_mcp.infrastructure import ensure_firewall_open, manual_netsh_hint
+
+            ok, fw_message = ensure_firewall_open(port, allow_elevate=True)
+            if ok:
+                logger.info("Windows Firewall rule ensured for TCP port %s", port)
+            else:
+                click.echo(
+                    f"Warning: could not open firewall for port {port}: {fw_message}\n"
+                    f"  Manual command (run as administrator):\n"
+                    f"  {manual_netsh_hint(port)}",
+                    err=True,
+                )
+                logger.warning(
+                    "Could not open firewall for port %s: %s", port, fw_message
+                )
+        except Exception:
+            logger.warning("Firewall auto-config failed", exc_info=True)
 
     # --- Tray mode: start tray icon + server in background ---
     if tray:
@@ -964,6 +1001,36 @@ def uninstall() -> None:
     if _START_SCRIPT_PATH.exists():
         _START_SCRIPT_PATH.unlink()
         click.echo(f"Removed {_START_SCRIPT_PATH}")
+
+    # Remove the Windows Firewall rules for the configured ports.
+    ports: set[int] = set()
+    try:
+        cfg = load_config(discover_config_path(None))
+        ports.add(cfg.server.port)
+    except (FileNotFoundError, ValueError):
+        pass
+    try:
+        from windows_mcp.setup_wizard import _read_config_safe
+
+        raw = _read_config_safe()
+        local = raw.get("local", {})
+        if local.get("enabled"):
+            ports.add(int(local.get("port", 8001)))
+    except Exception:
+        pass
+    if not ports:
+        ports = {8000}
+
+    from windows_mcp.infrastructure import delete_rule
+
+    for port in sorted(ports):
+        ok, fw_message = delete_rule(port, elevate=True)
+        if ok:
+            click.echo(f"Removed firewall rule for TCP port {port}.")
+        else:
+            click.echo(
+                f"Could not remove firewall rule for TCP port {port}: {fw_message}"
+            )
 
     click.echo("windows-mcp will no longer start at login.")
 

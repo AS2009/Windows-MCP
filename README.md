@@ -135,6 +135,25 @@ to `~/.windows-mcp/server.log` and `~/.windows-mcp/server.error.log`.
 windows-mcp serve --transport sse --host 0.0.0.0 --port 8000 --auth-key <密钥>
 ```
 
+### 自动开放防火墙（本仓库新增）
+
+服务器绑定非回环地址时（即需要局域网访问），会自动添加 Windows 防火墙入站规则
+（`netsh advfirewall`，规则名 `Windows-MCP (TCP <端口>)`），无需手动配置防火墙：
+
+- 首次添加会弹出 **UAC 管理员授权框**，点“是”即可；之后规则已存在，不再弹出。
+- 配置向导（GUI/命令行）保存配置时会自动开放防火墙并显示结果。
+- `serve` 启动时也会自动检查并开放（`--no-firewall` 可关闭）。
+- 配置文件中可用 `server.open_firewall = false` 永久关闭自动开放。
+- `windows-mcp uninstall` 会删除对应端口的防火墙规则。
+- 若自动开放失败（例如拒绝了 UAC），终端会给出可手动执行的管理员命令。
+
+```shell
+# 手动开放（管理员命令行）:
+netsh advfirewall firewall add rule name="Windows-MCP (TCP 8000)" dir=in action=allow protocol=TCP localport=8000 profile=any
+# 手动关闭自动开放:
+windows-mcp serve --no-firewall
+```
+
 <details>
   <summary>Install in Claude Desktop</summary>
 

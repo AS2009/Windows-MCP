@@ -13,6 +13,7 @@ class ServerConfig:
     host: str = "localhost"
     port: int = 8000
     allow_insecure_remote: bool = False
+    open_firewall: bool = True
     auth_key: str | None = None
     ssl_certfile: str | None = None
     ssl_keyfile: str | None = None
@@ -121,6 +122,8 @@ def load_config(path: Path | None) -> WindowsMCPConfig:
         cfg.server.allow_insecure_remote = _strict_bool(
             server["allow_insecure_remote"], "server.allow_insecure_remote"
         )
+    if "open_firewall" in server:
+        cfg.server.open_firewall = _strict_bool(server["open_firewall"], "server.open_firewall")
     if "auth_key" in server:
         cfg.server.auth_key = _strict_string(server["auth_key"], "server.auth_key") or None
     if "ssl_certfile" in server:
@@ -172,6 +175,8 @@ def write_config(cfg: WindowsMCPConfig, path: Path) -> None:
         server_lines.append(f"port = {sd.port}")
     if sd.allow_insecure_remote:
         server_lines.append("allow_insecure_remote = true")
+    if not sd.open_firewall:
+        server_lines.append("open_firewall = false")
     if sd.auth_key:
         server_lines.append(f'auth_key = "{sd.auth_key}"')
     if sd.ssl_certfile:
