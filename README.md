@@ -98,6 +98,43 @@ This creates a per-user Scheduled Task named `windows-mcp-server` and a wrapper 
 `~/.windows-mcp/start-server.cmd`. Use `windows-mcp uninstall` to remove it. Logs are written
 to `~/.windows-mcp/server.log` and `~/.windows-mcp/server.error.log`.
 
+### 一键安装包 / 托盘模式（本仓库新增）
+
+本仓库在官方版本之外额外提供了一键 EXE 与安装包（`Windows-MCP-Setup-*.exe`），
+并内置系统托盘与图形配置向导，目标环境为 **Windows 8.1 及双网卡机器**：
+
+- 双击 `windows-mcp.exe` → 图形配置向导（生成 `%USERPROFILE%\.windows-mcp\config.toml`，
+  自动生成认证密钥、可选开机自启）。
+- `windows-mcp.exe serve --tray` → 托盘模式：无控制台窗口，右键托盘图标可复制
+  各网卡的 SSE 连接地址、打开 Web 界面、停止服务。双击图标打开 Web 界面。
+- `windows-mcp.exe serve-all` → 同时启动内网共享端口（config 中的 `host/port`）与
+  本机专用端口（`[local]`，默认 127.0.0.1:8001，无需认证）。
+- 双击 `Windows-MCP.vbs` 或 `run_tray.pyw` → 同样以托盘模式启动（自动读取配置文件，
+  不再硬编码任何参数）。
+
+> ⚠️ Windows 8.1 说明：本项目要求 Python 3.12/3.13（官方支持 Windows 8.1+）。
+> 不要使用 Python 3.9 及更早版本；若需 Windows 7 请改用官方 Python 3.8 方案。
+
+### 双网卡（双网络）使用说明
+
+服务器默认绑定 `0.0.0.0`，会同时监听所有网卡。一台机器同时连接两个网络时，
+两个网络内的客户端都可以连接，互不影响：
+
+1. 运行配置向导，绑定地址保持 `0.0.0.0`，端口默认 `8000`，认证密钥由向导自动生成。
+2. 启动后（托盘模式或 `serve`），右键托盘图标 → `Connection URLs`，能看到每个网卡
+   各自的连接地址，例如：
+   - `http://192.168.1.10:8000/sse`（网络 A）
+   - `http://10.0.0.5:8000/sse`（网络 B）
+3. 各网络内的 MCP 客户端使用对应子网的地址，并携带 `Authorization: Bearer <密钥>` 请求头。
+4. 如需限制只允许特定网段访问，可在配置向导的“IP 白名单”中分别填写两个网段，
+   例如 `192.168.1.0/24, 10.0.0.0/24`。
+
+命令行方式：
+
+```shell
+windows-mcp serve --transport sse --host 0.0.0.0 --port 8000 --auth-key <密钥>
+```
+
 <details>
   <summary>Install in Claude Desktop</summary>
 

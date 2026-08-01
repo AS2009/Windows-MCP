@@ -2,7 +2,7 @@
 # Windows-MCP 配置向导
 # 支持命令行交互、Tkinter 图形界面、开机自启管理
 
-import os, sys, subprocess
+import sys, subprocess
 from pathlib import Path
 
 CONFIG_DIR = Path.home() / '.windows-mcp'
@@ -48,15 +48,36 @@ def generate_toml(cfg):
         lines.append('')
     return '\n'.join(lines)
 
-def get_exe_path():
-    if getattr(sys, 'frozen', False): return sys.executable
-    return sys.argv[0]
+def _server_argv():
+    '''返回启动 windows-mcp 服务的 argv 前缀。'''
+    if getattr(sys, 'frozen', False):
+        return [sys.executable]
+    # 源码/venv 模式：优先 pythonw.exe（开机自启不弹控制台）
+    py = Path(sys.executable)
+    pythonw = py.with_name('pythonw.exe')
+    if sys.platform == 'win32' and pythonw.exists():
+        return [str(pythonw), '-m', 'windows_mcp']
+    return [sys.executable, '-m', 'windows_mcp']
 
-def enable_autostart(use_serve_all=False):
+
+def _autostart_command(use_serve_all=False, transport='sse'):
+    '''生成开机自启命令行。use_serve_all=True 时同时启动双端口（仅 EXE 模式）。'''
+    if getattr(sys, 'frozen', False):
+        if use_serve_all:
+            return f'"{sys.executable}" serve-all'
+        if transport != 'stdio':
+            return f'"{sys.executable}" serve --tray'
+        return f'"{sys.executable}" serve'
+    interpreter = _server_argv()[0]
+    if transport != 'stdio':
+        return f'"{interpreter}" -m windows_mcp serve --tray'
+    return f'"{interpreter}" -m windows_mcp serve'
+
+
+def enable_autostart(use_serve_all=False, transport='sse'):
     '''添加开机自启。use_serve_all=True 时同时启动双端口。'''
     try:
-        exe = get_exe_path()
-        cmd = f'"{exe}" serve-all' if use_serve_all else f'"{exe}" serve'
+        cmd = _autostart_command(use_serve_all, transport)
         subprocess.run(['reg','add',AUTOSTART_KEY,'/v',AUTOSTART_NAME,'/t','REG_SZ','/d',cmd,'/f'], capture_output=True, check=True)
         return True
     except: return False
@@ -75,16 +96,28 @@ def is_autostart_enabled():
 
 def start_server(local_port=None):
     '''启动 MCP 服务器，如果 local_port 指定则同时启动两个实例'''
-    exe = get_exe_path()
+    exe = _server_argv()
     flag = subprocess.CREATE_NO_WINDOW if hasattr(subprocess, 'CREATE_NO_WINDOW') else 0
     # 主服务（内网共享）
-    subprocess.Popen([exe, 'serve'], creationflags=flag)
+    subprocess.Popen(exe + ['serve'], creationflags=flag)
     # 本机专用服务（127.0.0.1，不需要认证）
     if local_port:
         subprocess.Popen(
-            [exe, 'serve', '--host', '127.0.0.1', '--port', str(local_port)],
+            exe + ['serve', '--host', '127.0.0.1', '--port', str(local_port)],
             creationflags=flag
         )
+
+
+def _ensure_auth_key(cfg):
+    '''当绑定非回环地址且未设置认证密钥时，自动生成一个。'''
+    if cfg.get('transport') == 'stdio':
+        return cfg.get('auth_key')
+    host = cfg.get('host', '0.0.0.0')
+    is_loopback = host in ('127.0.0.1', 'localhost', '::1') or str(host).startswith('127.')
+    if not cfg.get('auth_key') and not is_loopback:
+        import secrets
+        cfg['auth_key'] = secrets.token_urlsafe(16)
+    return cfg.get('auth_key')
 
 def _read_config_safe():
     '''安全读取配置文件，返回 dict。用于 build_exe.py 读取 local 端口配置。'''
@@ -122,11 +155,14 @@ def _read_config_safe():
 
 def quick_setup():
     cfg = default_config()
+    _ensure_auth_key(cfg)
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     CONFIG_FILE.write_text(generate_toml(cfg), encoding='utf-8')
     print(f'配置完成: {CONFIG_FILE}')
+    if cfg['auth_key']:
+        print(f'认证密钥: {cfg["auth_key"]}')
     if cfg['autostart']:
-        if enable_autostart(cfg.get('local_enabled', False)): print('已添加开机自启')
+        if enable_autostart(cfg.get('local_enabled', False), cfg['transport']): print('已添加开机自启')
         else: print('警告: 开机自启设置失败')
     print('正在启动服务...')
     local_port = cfg['local_port'] if cfg.get('local_enabled') else None
@@ -182,12 +218,17 @@ def console_wizard():
     auto = input('开机自启？[Y/n]: ').strip().lower()
     cfg['autostart'] = auto != 'n'
 
+    key = _ensure_auth_key(cfg)
+    if key:
+        print(f'\n认证密钥: {key}')
+        print('（请保存好，客户端连接时需要）')
+
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     CONFIG_FILE.write_text(generate_toml(cfg), encoding='utf-8')
     print(f'\n配置已保存: {CONFIG_FILE}')
 
     if cfg['autostart']:
-        ok = enable_autostart(cfg.get('local_enabled', False))
+        ok = enable_autostart(cfg.get('local_enabled', False), cfg['transport'])
         print('已添加开机自启' if ok else '警告: 开机自启设置失败')
     else:
         disable_autostart()
@@ -308,13 +349,15 @@ def gui_wizard():
         root.update()
         local_port = cfg['local_port'] if cfg.get('local_enabled') else None
         start_server(local_port)
+        key_text = f'\n\n认证密钥: {cfg["auth_key"]}' if cfg.get('auth_key') else ''
         messagebox.showinfo('配置完成',
-            f'服务已启动！\n\n配置文件: {CONFIG_FILE}\n开机自启: {"是" if cfg["autostart"] else "否"}\n\n内网共享: http://本机IP:{cfg["port"]}/{cfg["transport"]}' + (f'\n本机专用: http://127.0.0.1:{cfg["local_port"]}/{cfg["transport"]}' if cfg.get('local_enabled') else ''))
+            f'服务已启动！\n\n配置文件: {CONFIG_FILE}\n开机自启: {"是" if cfg["autostart"] else "否"}{key_text}\n\n内网共享: http://本机IP:{cfg["port"]}/{cfg["transport"]}' + (f'\n本机专用: http://127.0.0.1:{cfg["local_port"]}/{cfg["transport"]}' if cfg.get('local_enabled') else ''))
         root.destroy()
 
     def do_save_only():
         _save(cfg, transport_var, host_var, port_var, auth_var, ip_var, tools_var, autostart_var, local_enabled_var, local_port_var)
-        messagebox.showinfo('已保存', f'配置文件: {CONFIG_FILE}\n\n运行 windows-mcp serve 启动服务。')
+        key_text = f'\n\n认证密钥: {cfg["auth_key"]}' if cfg.get('auth_key') else ''
+        messagebox.showinfo('已保存', f'配置文件: {CONFIG_FILE}{key_text}\n\n运行 windows-mcp serve 启动服务。')
         root.destroy()
 
     ttk.Button(btn, text='保存并启动', command=do_save_and_start, width=15).pack(side='left', padx=5)
@@ -334,12 +377,13 @@ def _save(cfg, transport_var, host_var, port_var, auth_var, ip_var, tools_var, a
     if tools_var.get():
         cfg['tools_exclude'] = [t.strip() for t in tools_var.get().split(',') if t.strip()]
     cfg['autostart'] = autostart_var.get()
+    _ensure_auth_key(cfg)
     if local_enabled_var is not None:
         cfg['local_enabled'] = local_enabled_var.get()
         cfg['local_port'] = local_port_var.get()
     CONFIG_DIR.mkdir(parents=True, exist_ok=True)
     CONFIG_FILE.write_text(generate_toml(cfg), encoding='utf-8')
     if cfg['autostart']:
-        enable_autostart(cfg.get('local_enabled', False))
+        enable_autostart(cfg.get('local_enabled', False), cfg['transport'])
     else:
         disable_autostart()

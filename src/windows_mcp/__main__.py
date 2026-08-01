@@ -31,7 +31,9 @@ import subprocess
 import click
 import os
 import sys
+import time
 import threading
+from pathlib import Path
 
 from windows_mcp.tray import WindowsMCPTray
 
@@ -680,13 +682,19 @@ def serve(
         cli_tools or "all",
         cli_exclude or "none",
     )
-    try:
-        _run_server(
+
     # --- Tray mode: start tray icon + server in background ---
     if tray:
-        if not auth_key and not allow_insecure_remote:
+        if transport == Transport.STDIO.value:
+            raise click.ClickException("--tray is only supported with an HTTP transport (sse or streamable-http).")
+        if (
+            not is_loopback_host(host)
+            and not auth_key
+            and not allow_insecure_remote
+            and not configured_oauth
+        ):
             raise click.ClickException(
-                "--tray requires --auth-key when binding to non-loopback addresses."
+                "--tray requires --auth-key (or OAuth) when binding to non-loopback addresses."
             )
         stop_event = threading.Event()
         server_thread: threading.Thread | None = None
@@ -720,15 +728,22 @@ def serve(
         tray_icon = WindowsMCPTray(host=host, port=port, on_exit=_on_tray_exit)
         tray_icon.start()
 
-        # Show tray balloon notification
-        display_host = host if host != "0.0.0.0" else "localhost"
-        tray_icon._show_balloon(
-            "Windows-MCP Started",
-            f"Server running at {display_host}:{port}\nRight-click tray icon for menu.",
-        )
-
         server_thread = threading.Thread(target=_run_in_thread, daemon=True)
         server_thread.start()
+
+        # Show tray balloon notification once the tray window exists.
+        display_host = host if host != "0.0.0.0" else "localhost"
+        tray_icon.wait_ready(timeout=10)
+        if tray_icon.ready:
+            urls = tray_icon.connection_urls()
+            if urls:
+                detail = "\n".join(urls[:4])
+                balloon_msg = f"Server: http://{display_host}:{port}/sse\n\n{detail}"
+            else:
+                balloon_msg = f"Server running at {display_host}:{port}\nRight-click tray icon for menu."
+            tray_icon.show_balloon("Windows-MCP Started", balloon_msg)
+        else:
+            logger.warning("Tray window not ready; skipping startup balloon")
 
         click.echo(f"Windows-MCP tray mode: http://{display_host}:{port}/sse")
         click.echo("Tray icon active — right-click for menu, double-click for web interface.")
@@ -736,13 +751,15 @@ def serve(
         # Block until stop_event is set
         try:
             while not stop_event.is_set():
-                import time
                 time.sleep(0.5)
         except KeyboardInterrupt:
             pass
 
         tray_icon.stop()
-        return  # Don't fall through to normal _run_server
+        # The server runs in a daemon thread and uvicorn has no clean
+        # stop-from-another-thread API, so terminate the process directly.
+        # Tray mode is a foreground GUI app; there is nothing to persist.
+        os._exit(0)
 
     try:
         _run_server(
@@ -838,10 +855,17 @@ _START_SCRIPT_PATH = CONFIG_DIR / "start-server.cmd"
 def _resolve_program() -> list[str]:
     """Return the argv prefix to invoke `windows-mcp serve` from Task Scheduler.
 
-    Uses the running interpreter so the wrapper always targets this exact
-    installation, regardless of what (if anything) is on PATH.
+    PyInstaller builds are invoked directly through ``sys.executable`` (the
+    frozen ``-m`` form does not exist). Source installs prefer ``pythonw.exe``
+    (no console window flashing at logon) and fall back to ``python.exe``.
     """
-    return [sys.executable, "-m", "windows_mcp"]
+    if getattr(sys, "frozen", False):
+        return [sys.executable]
+    interpreter = sys.executable
+    pythonw = Path(sys.executable).with_name("pythonw.exe")
+    if pythonw.exists():
+        interpreter = str(pythonw)
+    return [interpreter, "-m", "windows_mcp"]
 
 
 def _build_start_script(program_args: list[str]) -> str:

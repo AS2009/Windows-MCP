@@ -1,5 +1,5 @@
 #define MyAppName "Windows-MCP"
-#define MyAppVersion "0.8.2"
+#define MyAppVersion "0.8.3"
 #define MyAppPublisher "AS2009"
 #define MyAppURL "https://github.com/AS2009/Windows-MCP"
 #define MyAppExeName "windows-mcp.exe"
@@ -38,7 +38,7 @@ Name: "{autodesktop}\{#MyAppName}"; Filename: "{app}\{#MyAppExeName}"; Tasks: de
 Filename: "{app}\{#MyAppExeName}"; Description: "Launch configuration wizard"; Flags: nowait postinstall skipifsilent
 
 [Registry]
-Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "Windows-MCP"; ValueData: """{app}\{#MyAppExeName}"" serve-all"; Flags: uninsdeletevalue; Tasks: startup
+Root: HKCU; Subkey: "Software\Microsoft\Windows\CurrentVersion\Run"; ValueType: string; ValueName: "Windows-MCP"; ValueData: """{app}\{#MyAppExeName}"" serve --tray"; Flags: uninsdeletevalue; Tasks: startup
 
 [UninstallRun]
 Filename: "reg"; Parameters: "delete HKCU\Software\Microsoft\Windows\CurrentVersion\Run /v Windows-MCP /f"; Flags: runhidden
