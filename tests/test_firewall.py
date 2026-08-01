@@ -33,6 +33,21 @@ def test_manual_hint_contains_netsh():
     assert "localport=8000" in hint
 
 
+def test_cmd_line_quotes_rule_name():
+    line = fw._add_rule_cmd_line(8999)
+    assert 'name="Windows-MCP (TCP 8999)"' in line
+    assert "localport=8999" in line
+
+
+def test_manual_hint_has_quoted_name():
+    hint = fw.manual_netsh_hint(8999)
+    assert 'name="Windows-MCP (TCP 8999)"' in hint
+
+
+def test_delete_cmd_line_quotes_rule_name():
+    assert 'name="Windows-MCP (TCP 8999)"' in fw._delete_rule_cmd_line(8999)
+
+
 def test_non_windows_is_safe(monkeypatch):
     monkeypatch.setattr(sys, "platform", "darwin")
     ok, message = fw.add_rule(8000)
@@ -42,6 +57,28 @@ def test_non_windows_is_safe(monkeypatch):
     assert not ok
     assert "仅支持 Windows" in message
     assert fw.rule_exists(8000) is False
+
+
+def test_run_elevated_netsh_non_windows():
+    ok, message = fw._run_elevated_netsh("advfirewall firewall add rule x")
+    assert not ok
+    assert "仅支持 Windows" in message
+
+
+def test_elevated_add_passes_quoted_command_line(monkeypatch):
+    monkeypatch.setattr(sys, "platform", "win32")
+    captured: dict[str, str] = {}
+
+    def fake_run(command_line: str):
+        captured["line"] = command_line
+        return True, "ok"
+
+    monkeypatch.setattr(fw, "_run_elevated_netsh", fake_run)
+    monkeypatch.setattr(fw, "rule_exists", lambda port: True)
+
+    ok, message = fw._add_rule_elevated(8999)
+    assert ok is True
+    assert 'name="Windows-MCP (TCP 8999)"' in captured["line"]
 
 
 def test_rule_exists_true(monkeypatch):

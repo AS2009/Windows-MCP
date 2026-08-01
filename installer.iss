@@ -1,5 +1,5 @@
 #define MyAppName "Windows-MCP"
-#define MyAppVersion "0.8.4"
+#define MyAppVersion "0.8.5"
 #define MyAppPublisher "AS2009"
 #define MyAppURL "https://github.com/AS2009/Windows-MCP"
 #define MyAppExeName "windows-mcp.exe"

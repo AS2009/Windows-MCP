@@ -72,6 +72,22 @@ def _add_rule_cmd(port: int) -> list[str]:
     ]
 
 
+def _add_rule_cmd_line(port: int) -> str:
+    """Command-line string form (for UAC / manual execution).
+
+    The rule name contains spaces and parentheses, so the value MUST be
+    double-quoted in the raw command line — otherwise netsh's tokenizer
+    splits ``name=Windows-MCP (TCP 8999)`` into three arguments and the
+    command fails. The list form (:func:`_add_rule_cmd`) relies on
+    subprocess quoting instead and must stay unquoted here.
+    """
+    return (
+        "advfirewall firewall add rule "
+        f'name="{rule_name(port)}" dir=in action=allow protocol=TCP '
+        f"localport={port} profile=any enable=yes"
+    )
+
+
 def _delete_rule_cmd(port: int) -> list[str]:
     return [
         "advfirewall",
@@ -82,23 +98,62 @@ def _delete_rule_cmd(port: int) -> list[str]:
     ]
 
 
+def _delete_rule_cmd_line(port: int) -> str:
+    return f'advfirewall firewall delete rule name="{rule_name(port)}"'
+
+
+def _run_elevated_netsh(command_line: str, timeout: float = 150.0) -> tuple[bool, str]:
+    """Run a netsh command elevated via the UAC prompt.
+
+    Uses ``Start-Process -Verb RunAs -Wait`` so the elevated netsh runs
+    hidden and PowerShell reports whether the user accepted the prompt.
+    Returns ``(accepted, message)`` — a True result means netsh was
+    launched, not necessarily that the rule changed; callers should verify
+    with :func:`rule_exists`.
+    """
+    if not _is_windows():
+        return False, "仅支持 Windows"
+
+    # Single-quoted PowerShell string: literal, so the embedded double
+    # quotes around the rule name survive into the elevated command line.
+    ps_script = (
+        "$ErrorActionPreference = 'Stop'; "
+        "try { Start-Process -FilePath 'C:\\Windows\\System32\\netsh.exe' "
+        f"-ArgumentList '{command_line}' -Verb RunAs -Wait -WindowStyle Hidden; "
+        "Write-Output 'OK' } "
+        "catch { Write-Output $_.Exception.Message }"
+    )
+    try:
+        proc = subprocess.run(
+            ["powershell", "-NoProfile", "-NonInteractive", "-Command", ps_script],
+            capture_output=True,
+            text=True,
+            timeout=timeout,
+            creationflags=getattr(subprocess, "CREATE_NO_WINDOW", 0),
+        )
+    except subprocess.TimeoutExpired:
+        return False, "提权执行超时（UAC 授权框可能未确认）。"
+    except OSError as exc:
+        return False, f"无法启动提权进程: {exc}"
+
+    output = (proc.stdout or "") + (proc.stderr or "")
+    if proc.returncode == 0 and "OK" in output:
+        return True, "ok"
+
+    message = output.strip().splitlines()[-1] if output.strip() else f"退出码 {proc.returncode}"
+    if "cancel" in message.lower() or "取消" in message:
+        return False, "用户取消了管理员授权，未能开放防火墙端口。"
+    return False, message
+
+
 def _add_rule_elevated(port: int) -> tuple[bool, str]:
     """Add the rule through the UAC prompt and wait for it to appear."""
-    args = " ".join(_add_rule_cmd(port))
-    try:
-        import ctypes
+    accepted, message = _run_elevated_netsh(_add_rule_cmd_line(port))
+    if not accepted:
+        return False, message
 
-        # "runas" verb shows the UAC consent prompt; SW_HIDE (0) hides netsh.
-        result = ctypes.windll.shell32.ShellExecuteW(
-            None, "runas", NETSH, args, None, 0
-        )
-    except Exception as exc:  # pragma: no cover - ctypes failures are platform-specific
-        return False, f"提权调用失败: {exc}"
-
-    # ShellExecuteW returns immediately; wait for the rule to appear.
-    if result <= 32:
-        return False, "用户取消了管理员授权，未能开放防火墙端口。"
-
+    # Wait for the rule to appear (Start-Process -Wait can return before
+    # the elevated netsh finishes on some PowerShell versions).
     deadline = time.monotonic() + 60
     while time.monotonic() < deadline:
         if rule_exists(port):
@@ -143,18 +198,9 @@ def add_rule(port: int, elevate: bool = False) -> tuple[bool, str]:
 
 def _delete_rule_elevated(port: int) -> tuple[bool, str]:
     """Delete the rule through the UAC prompt and wait for it to disappear."""
-    args = " ".join(_delete_rule_cmd(port))
-    try:
-        import ctypes
-
-        result = ctypes.windll.shell32.ShellExecuteW(
-            None, "runas", NETSH, args, None, 0
-        )
-    except Exception as exc:  # pragma: no cover
-        return False, f"提权调用失败: {exc}"
-
-    if result <= 32:
-        return False, "用户取消了管理员授权，未能删除防火墙规则。"
+    accepted, message = _run_elevated_netsh(_delete_rule_cmd_line(port))
+    if not accepted:
+        return False, message
 
     deadline = time.monotonic() + 30
     while time.monotonic() < deadline:
@@ -205,4 +251,4 @@ def ensure_firewall_open(
 
 def manual_netsh_hint(port: int) -> str:
     """Return the exact elevated command the user can run by hand."""
-    return f'"{NETSH}" {" ".join(_add_rule_cmd(port))}'
+    return f'"{NETSH}" {_add_rule_cmd_line(port)}'
